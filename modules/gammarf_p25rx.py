@@ -33,6 +33,7 @@ from uuid import uuid4
 
 from gammarf_base import GrfModuleBase
 
+CALL_REGEX = r'[\S\s]+Call created for: ([0-9]+) [\S\s]+'
 ERROR_SLEEP = 3  # s
 LST_ADDR = "127.0.0.1"
 MODULE_DESCRIPTION = "p25 receiver module"
@@ -56,6 +57,7 @@ class P25Rx(threading.Thread):
         self.devmod = devmod
         self.settings = settings
 
+
         threading.Thread.__init__(self)
 
     def run(self):
@@ -71,7 +73,6 @@ class P25Rx(threading.Thread):
         outmsg = OrderedDict()
         outmsg['stationid'] = self.station_id
 
-        data = ''
         while True:
             loc = self.gpsp.get_current()
             if (loc == None) or (loc['lat'] == "0.0" and loc['lng'] == "0.0") or (loc['lat'] == "NaN"):
@@ -79,50 +80,36 @@ class P25Rx(threading.Thread):
                 time.sleep(ERROR_SLEEP)
                 continue
 
-            try:
-                tmp = self.lstsock.recv(SOCK_BUFSZ)
-            except socket.error, e:
-                return
+            for line in self.lstsock.makefile():
+                if '\t' in line:
+                    _, msg = line.split('\t', 1)
+                else:
+                    continue
 
-            if tmp == '':
-                print("[p5rx] Client closed")
-                srvsock.close()
-                self.lstsock.close()
-                return
+                if msg.startswith('Call'):
+                    talkgroup = msg.split(' ')[3].split('\t')[0].strip()
+                else:
+                    continue
 
-            data = data + tmp
-            if '\n' in data:
-                line, data = data.split('\n', 1)
+                if self.settings['print_all']:
+                    print("[p25rx] Talkgroup: {}, Lat: {}, Lng: {}".format(talkgroup, loc['lat'], loc['lng']))
 
-            if '\t' in line:
-                _, msg = line.split('\t', 1)
-            else:
-                continue
+                outmsg['talkgroup'] = talkgroup
+                outmsg['lat'] = float(loc['lat'])
+                outmsg['lng'] = float(loc['lng'])
+                outmsg['module'] = 'p25'
+                outmsg['jobid'] = self.jobid
+                outmsg['time'] = str(int(time.time()))
+                m = md5()
+                m.update(self.station_pass + outmsg['talkgroup'] + outmsg['time'])
+                outmsg['sign'] = m.hexdigest()
 
-            if msg.startswith('Call'):
-                talkgroup = msg.split(' ')[3].split('\t')[0].strip()
-            else:
-                continue
-
-            if self.settings['print_all']:
-                print("[p25rx] Talkgroup: {}, Lat: {}, Lng: {}".format(talkgroup, loc['lat'], loc['lng']))
-
-            outmsg['talkgroup'] = talkgroup
-            outmsg['lat'] = float(loc['lat'])
-            outmsg['lng'] = float(loc['lng'])
-            outmsg['module'] = 'p25'
-            outmsg['jobid'] = self.jobid
-            outmsg['time'] = str(int(time.time()))
-            m = md5()
-            m.update(self.station_pass + outmsg['talkgroup'] + outmsg['time'])
-            outmsg['sign'] = m.hexdigest()
-
-            try:
-                srvsock.sendto(json.dumps(outmsg), (self.server_host, self.server_port))
-            except Exception:
-                print("[p25rx] Could not send to server, waiting...")
-                time.sleep(ERROR_SLEEP)
-                continue
+                try:
+                    srvsock.sendto(json.dumps(outmsg), (self.server_host, self.server_port))
+                except Exception:
+                    print("[p25rx] Could not send to server, waiting...")
+                    time.sleep(ERROR_SLEEP)
+                    continue
 
         return
 

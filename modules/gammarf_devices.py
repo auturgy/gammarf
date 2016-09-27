@@ -148,9 +148,10 @@ class GrfModuleDevices(GrfModuleBase):
         return
 
     def reserve(self, devnum):
-        dev = self.devs[devnum]
-        dev.reserved = True
-        dev.job = "*** Reserved"
+        if devnum in self.devs:
+            dev = self.devs[devnum]
+            dev.reserved = True
+            dev.job = "*** Reserved"
         return
 
     def unreserve(self, devnum):
