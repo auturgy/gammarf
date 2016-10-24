@@ -30,8 +30,7 @@ import time
 import pyModeS as pms
 from collections import OrderedDict
 from hashlib import md5
-from multiprocessing import Pipe, Process
-from subprocess import Popen, PIPE, STDOUT
+from subprocess import Popen, PIPE
 from sys import builtin_module_names
 
 from gammarf_base import GrfModuleBase
